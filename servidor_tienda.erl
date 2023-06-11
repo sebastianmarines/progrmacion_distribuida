@@ -49,11 +49,14 @@ servidor(Datos) ->
         {De, {registra_producto, Producto, Cantidad}} ->
             io:format("Registrando producto ~p~n", [Producto]),
             De ! {servidor_tienda, ok},
+            PID = crear_servidor_producto(Cantidad),
+            io:format("PID: ~p~n", [PID]),
+            erlang:monitor(process, PID),
             servidor(
                 {
                     element(1, Datos),
                     [
-                        {Producto, crear_servidor_producto(Cantidad)} | element(2, Datos)
+                        {Producto, PID} | element(2, Datos)
                     ],
                     element(3, Datos)
                 }
@@ -62,6 +65,16 @@ servidor(Datos) ->
             io:format("Listando productos~n"),
             De ! {servidor_tienda, element(2, Datos)},
             servidor(Datos);
+        {'DOWN', _, process, PID, _} ->
+            Producto = lists:keyfind(PID, 2, element(2, Datos)),
+            io:format("Eliminando producto ~p~n", [Producto]),
+            servidor(
+                {
+                    element(1, Datos),
+                    lists:keydelete(PID, 2, element(2, Datos)),
+                    element(3, Datos)
+                }
+            );
         {De, _} ->
             De ! {servidor_tienda, {error, "Mensaje no reconocido"}},
             servidor(Datos)
