@@ -1,5 +1,6 @@
 -module(servidor_tienda).
--export([inicio/0, servidor/1]).
+-export([abre_tienda/0, servidor/1, cierra_tienda/0, lista_socios/0, probar/0]).
+-import(common, [llama_tienda/1]).
 
 servidor(Datos) ->
     receive
@@ -29,20 +30,33 @@ servidor(Datos) ->
                     servidor({lists:delete(Quien, element(1, Datos)), element(2, Datos)})
             end,
             De ! {servidor_tienda, ok},
+            servidor(Datos);
+        {De, lista_socios} ->
+            io:format("Listando socios~n"),
+            De ! {servidor_tienda, element(1, Datos)},
+            servidor(Datos);
+        {De, _} ->
+            De ! {servidor_tienda, {error, "Mensaje no reconocido"}},
             servidor(Datos)
     end.
 
-inicio() ->
+abre_tienda() ->
     register(
         servidor_tienda,
         spawn(servidor_tienda, servidor, [{[], []}])
     ).
 
-% suscribe(Cliente) ->
-%     servidor_tienda ! {self(), {suscribir, Cliente}},
-%     receive
-%         {servidor_tienda, ok} ->
-%             io:format("Suscripción realizada~n");
-%         {servidor_tienda, {error, Cliente}} ->
-%             io:format("El cliente ~p ya está suscrito~n", [Cliente])
-%     end.
+cierra_tienda() ->
+    unregister(servidor_tienda).
+
+lista_socios() ->
+    llama_tienda(lista_socios).
+
+probar() ->
+    abre_tienda(),
+    io:format("Abriendo tienda~n"),
+    io:format("Suscribiendo a sebastian~n"),
+    io:format("~p~n", [llama_tienda({suscribir, sebastian})]),
+    io:format("Listando socios~n"),
+    io:format("~p~n", [lista_socios()]),
+    cierra_tienda().
