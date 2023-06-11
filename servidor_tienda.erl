@@ -5,7 +5,6 @@ servidor(Datos) ->
     receive
         {De, {suscribir, Quien}} ->
             io:format("Suscribiendo a ~p~n", [Quien]),
-            io:format("Datos: ~p~n", [Datos]),
             % Si Quien ya está suscrito, no lo suscribimos de nuevo y enviamos un mensaje de error
             case lists:member(Quien, element(1, Datos)) of
                 true ->
@@ -19,8 +18,16 @@ servidor(Datos) ->
             servidor(Datos);
         {De, {eliminar_suscripcion, Quien}} ->
             % Print datos
-            io:format("Datos: ~p~n", [Datos]),
             io:format("Eliminando suscripción de ~p~n", [Quien]),
+            % Si Quien no está suscrito, no lo eliminamos y enviamos un mensaje de error
+            case lists:member(Quien, element(1, Datos)) of
+                false ->
+                    De ! {servidor_tienda, {error, Quien}},
+                    servidor(Datos);
+                true ->
+                    De ! {servidor_tienda, ok},
+                    servidor({lists:delete(Quien, element(1, Datos)), element(2, Datos)})
+            end,
             De ! {servidor_tienda, ok},
             servidor(Datos)
     end.
