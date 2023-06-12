@@ -1,3 +1,6 @@
+% Sebastian Marines Alvarez A01383056
+% Saul Sanchez Rangel A01383954
+
 -module(common).
 -export([llama_tienda/1]).
 

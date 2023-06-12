@@ -1,3 +1,6 @@
+% Sebastian Marines Alvarez A01383056
+% Saul Sanchez Rangel A01383954
+
 -module(cliente_tienda).
 -export([
     suscribir_socio/1, elimina_socio/1, lista_existencias/0, crea_pedido/2
