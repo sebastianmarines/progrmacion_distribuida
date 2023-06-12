@@ -9,7 +9,8 @@
     registra_producto/2,
     llama_producto/2,
     llenar_datos/0,
-    modifica_producto/2
+    modifica_producto/2,
+    productos_vendidos/0
 ]).
 -compile(common).
 -import(common, [llama_tienda/1]).
@@ -25,7 +26,12 @@ servidor(Datos) ->
                     servidor(Datos);
                 false ->
                     De ! {servidor_tienda, ok},
-                    servidor({[Quien | element(1, Datos)], element(2, Datos), element(3, Datos)})
+                    servidor({
+                        [Quien | element(1, Datos)],
+                        element(2, Datos),
+                        element(3, Datos),
+                        element(4, Datos)
+                    })
             end,
             De ! {servidor_tienda, ok},
             servidor(Datos);
@@ -40,7 +46,10 @@ servidor(Datos) ->
                 true ->
                     De ! {servidor_tienda, ok},
                     servidor({
-                        lists:delete(Quien, element(1, Datos)), element(2, Datos), element(3, Datos)
+                        lists:delete(Quien, element(1, Datos)),
+                        element(2, Datos),
+                        element(3, Datos),
+                        element(4, Datos)
                     })
             end,
             De ! {servidor_tienda, ok},
@@ -67,7 +76,8 @@ servidor(Datos) ->
                             [
                                 {Producto, PID} | element(2, Datos)
                             ],
-                            element(3, Datos)
+                            element(3, Datos),
+                            element(4, Datos)
                         }
                     )
             end;
@@ -113,57 +123,92 @@ servidor(Datos) ->
             io:format("Listando productos~n"),
             De ! {servidor_tienda, element(2, Datos)},
             servidor(Datos);
-        {De, {crea_pedido, ListaDeProductos}} ->
+        {De, {crea_pedido, Socio, ListaDeProductos}} ->
             % TODO: Verificar socio
-            io:format("[Tienda]: Creando pedido ~p~n", [integer_to_list(element(3, Datos))]),
-            NuevaListaProductos = lists:map(
-                fun({Producto, CantidadDeseada}) ->
-                    NuevoProducto = lists:keyfind(Producto, 1, element(2, Datos)),
-                    case NuevoProducto of
-                        false ->
-                            {Producto, 0};
-                        {Producto, PID} ->
-                            PID ! {self(), mostrar_disponibilidad},
-                            receive
-                                {servidor_producto, Cantidad} ->
-                                    io:format("[Tienda ~p]: Cantidad ~p: ~p~n", [
-                                        integer_to_list(element(3, Datos)), Producto, Cantidad
-                                    ]),
-                                    case CantidadDeseada > Cantidad of
-                                        true ->
-                                            {Producto, Cantidad};
-                                        false ->
-                                            {Producto, CantidadDeseada}
+
+            % Verificar que el socio esté suscrito
+            case lists:member(Socio, element(1, Datos)) of
+                false ->
+                    De ! {servidor_tienda, {error, "Socio no suscrito"}},
+                    servidor(Datos);
+                true ->
+                    io:format("[Tienda]: Creando pedido ~p~n", [integer_to_list(element(3, Datos))]),
+                    NuevaListaProductos = lists:map(
+                        fun({Producto, CantidadDeseada}) ->
+                            NuevoProducto = lists:keyfind(Producto, 1, element(2, Datos)),
+                            case NuevoProducto of
+                                false ->
+                                    {Producto, 0};
+                                {Producto, PID} ->
+                                    PID ! {self(), mostrar_disponibilidad},
+                                    receive
+                                        {servidor_producto, Cantidad} ->
+                                            io:format("[Tienda ~p]: Cantidad ~p: ~p~n", [
+                                                integer_to_list(element(3, Datos)),
+                                                Producto,
+                                                Cantidad
+                                            ]),
+                                            case CantidadDeseada > Cantidad of
+                                                true ->
+                                                    {Producto, Cantidad};
+                                                false ->
+                                                    {Producto, CantidadDeseada}
+                                            end
                                     end
                             end
-                    end
-                end,
-                ListaDeProductos
-            ),
-            io:format("[Tienda ~p]: Nueva lista de productos: ~p~n", [
-                integer_to_list(element(3, Datos)), NuevaListaProductos
-            ]),
-            lists:foreach(
-                fun({Nombre, Cantidad}) ->
-                    Disponibles = llama_producto_desde_servidor(
-                        Nombre, mostrar_disponibilidad, element(2, Datos)
+                        end,
+                        ListaDeProductos
                     ),
-                    io:format("[Tienda ~p]: ~p disponibles: ~p~n", [
-                        integer_to_list(element(3, Datos)), Nombre, Disponibles
+                    io:format("[Tienda ~p]: Nueva lista de productos: ~p~n", [
+                        integer_to_list(element(3, Datos)), NuevaListaProductos
                     ]),
-                    io:format("[Tienda ~p]: ~p deseadas: ~p~n", [
-                        integer_to_list(element(3, Datos)), Nombre, Cantidad
-                    ]),
-                    llama_producto_desde_servidor(
-                        Nombre,
-                        {actualizar_disponibilidad, Disponibles - Cantidad},
-                        element(2, Datos)
-                    )
-                end,
-                NuevaListaProductos
-            ),
-            De ! {servidor_tienda, ok},
-            servidor({element(1, Datos), element(2, Datos), element(3, Datos) + 1});
+                    lists:foreach(
+                        fun({Nombre, Cantidad}) ->
+                            Disponibles = llama_producto_desde_servidor(
+                                Nombre, mostrar_disponibilidad, element(2, Datos)
+                            ),
+                            io:format("[Tienda ~p]: ~p disponibles: ~p~n", [
+                                integer_to_list(element(3, Datos)), Nombre, Disponibles
+                            ]),
+                            io:format("[Tienda ~p]: ~p deseadas: ~p~n", [
+                                integer_to_list(element(3, Datos)), Nombre, Cantidad
+                            ]),
+                            llama_producto_desde_servidor(
+                                Nombre,
+                                {actualizar_disponibilidad, Disponibles - Cantidad},
+                                element(2, Datos)
+                            )
+                        end,
+                        NuevaListaProductos
+                    ),
+                    % Actualizar productos vendidos
+                    NuevaListaProductosVendidos = lists:map(
+                        fun({Producto, CantidadDeseada}) ->
+                            NuevoProducto = lists:keyfind(Producto, 1, element(4, Datos)),
+                            case NuevoProducto of
+                                false ->
+                                    {Producto, CantidadDeseada};
+                                {Producto, CantidadActual} ->
+                                    {Producto, CantidadActual + CantidadDeseada}
+                            end
+                        end,
+                        NuevaListaProductos
+                    ),
+
+                    De ! {servidor_tienda, ok},
+                    servidor({
+                        element(1, Datos),
+                        element(2, Datos),
+                        element(3, Datos) + 1,
+                        NuevaListaProductosVendidos
+                    })
+            end;
+        {De, productos_vendidos} ->
+            io:format("[Tienda]: Listando productos vendidos~n"),
+            Vendidos = element(4, Datos),
+            io:format("[Tienda]: ~p~n", [Vendidos]),
+            De ! {servidor_tienda, Vendidos},
+            servidor(Datos);
         {'DOWN', _, process, PID, _} ->
             Producto = lists:keyfind(PID, 2, element(2, Datos)),
             io:format("Eliminando producto ~p~n", [Producto]),
@@ -182,7 +227,7 @@ servidor(Datos) ->
 abre_tienda() ->
     register(
         servidor_tienda,
-        spawn(servidor_tienda, servidor, [{[], [], 0}])
+        spawn(servidor_tienda, servidor, [{[], [], 0, []}])
     ).
 
 cierra_tienda() ->
@@ -194,6 +239,9 @@ lista_socios() ->
 registra_producto(Producto, Cantidad) ->
     llama_tienda({registra_producto, Producto, Cantidad}).
 
+productos_vendidos() ->
+    llama_tienda(productos_vendidos).
+
 % elimina_producto(Producto) ->
 %     llama_tienda({elimina_producto, Producto}).
 
@@ -204,7 +252,7 @@ probar() ->
     % Abre la tienda
     abre_tienda(),
     % Suscribe a sebastian
-    % io:format("~p~n", [llama_tienda({suscribir, sebastian})]),
+    io:format("~p~n", [llama_tienda({suscribir, sebastian})]),
     % Lista los socios
     % io:format("~p~n", [lista_socios()]),
     % Registrar manzanas
@@ -234,11 +282,16 @@ probar() ->
     % Mostrar manzanas
     % io:format("~p~n", [llama_producto(manzanas, mostrar_disponibilidad)]),
     % Crea pedido
-    io:format("~p~n", [llama_tienda({crea_pedido, [{peras, 1}, {manzanas, 50}]})]),
+    io:format("~p~n", [llama_tienda({crea_pedido, sebastian, [{peras, 1}, {manzanas, 50}]})]),
     io:format("~n~n~n~n"),
     % Crea otro pedido
     io:format("Creando segundo pedido~n"),
-    io:format("~p~n", [llama_tienda({crea_pedido, [{peras, 1}, {manzanas, 50}]})]),
+    io:format("~p~n", [llama_tienda({crea_pedido, pepe, [{peras, 1}, {manzanas, 50}]})]),
+
+    io:format("~n~n~n~n"),
+    % Productos vendidos
+    io:format("~p~n", [productos_vendidos()]),
+
     % Elimina suscripción de sebastian
     % io:format("~p~n", [llama_tienda({eliminar_suscripcion, sebastian})]),
     % Lista los socios
@@ -248,12 +301,16 @@ probar() ->
 llenar_datos() ->
     % Abre la tienda
     abre_tienda(),
+    productos_vendidos(),
     % Suscribe a sebastian
     io:format("~p~n", [llama_tienda({suscribir, sebastian})]),
+    productos_vendidos(),
     % Registrar manzanas
     io:format("~p~n", [registra_producto(manzanas, 10)]),
     % Registrar peras
-    io:format("~p~n", [registra_producto(peras, 20)]).
+    productos_vendidos(),
+    io:format("~p~n", [registra_producto(peras, 20)]),
+    productos_vendidos().
 
 servidor_producto(Cantidad) ->
     receive
