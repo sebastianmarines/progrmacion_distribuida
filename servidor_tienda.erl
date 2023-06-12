@@ -107,13 +107,7 @@ servidor(Datos) ->
             end;
         {De, lista_productos} ->
             io:format("Listando productos~n"),
-            Productos = lists:map(
-                fun({Producto, PID}) ->
-                    {Producto, llama_producto({Producto, PID}, mostrar_disponibilidad)}
-                end,
-                element(2, Datos)
-            ),
-            De ! {servidor_tienda, Productos},
+            De ! {servidor_tienda, element(2, Datos)},
             servidor(Datos);
         {De, lista_productos_pid} ->
             io:format("Listando productos~n"),
@@ -122,12 +116,30 @@ servidor(Datos) ->
         {De, {crea_pedido, ListaDeProductos}} ->
             % TODO: Verificar socio
             io:format("Creando pedido ~p~n", [integer_to_list(element(3, Datos))]),
-            _NuevaListaProductos = lists:map(
-                fun({Producto, _Cantidad}) ->
-                    {Producto, llama_producto(Producto, mostrar_disponibilidad)}
+            NuevaListaProductos = lists:map(
+                fun({Producto, CantidadDeseada}) ->
+                    NuevoProducto = lists:keyfind(Producto, 1, element(2, Datos)),
+                    io:format("Nuevo producto: ~p~n", [NuevoProducto]),
+                    case NuevoProducto of
+                        false ->
+                            {Producto, 0};
+                        {Producto, PID} ->
+                            PID ! {self(), mostrar_disponibilidad},
+                            receive
+                                {servidor_producto, Cantidad} ->
+                                    io:format("Cantidad: ~p~n", [Cantidad]),
+                                    case CantidadDeseada > Cantidad of
+                                        true ->
+                                            {Producto, Cantidad};
+                                        false ->
+                                            {Producto, CantidadDeseada}
+                                    end
+                            end
+                    end
                 end,
                 ListaDeProductos
             ),
+            io:format("Nueva lista de productos: ~p~n", [NuevaListaProductos]),
             De ! {servidor_tienda, ok},
             servidor({element(1, Datos), element(2, Datos), element(3, Datos) + 1});
         {'DOWN', _, process, PID, _} ->
@@ -179,8 +191,8 @@ probar() ->
     io:format("~p~n", [registra_producto(peras, 20)]),
     % Lista los productos
     io:format("~p~n", [llama_tienda(lista_productos)]),
-    %Eliminar manzanas
-    io:format("~p~n", [elimina_producto(manzanas)]),
+    % %Eliminar manzanas
+    % io:format("~p~n", [elimina_producto(manzanas)]),
     % Lista los productos
     io:format("~p~n", [llama_tienda(lista_productos)]),
     % Registramos un producto con cantidad negativa
@@ -189,10 +201,13 @@ probar() ->
     io:format("~p~n", [elimina_producto(naranjas)]),
     % Modifica peras
     io:format("~p~n", [modifica_producto(peras, 30)]),
+    % Modificar manzanas
+    % TODO: fix bug
+    io:format("~p~n", [modifica_producto(manzanas, 5)]),
     % Listar peras
     io:format("~p~n", [llama_producto(peras, mostrar_disponibilidad)]),
-    % Listar productos
-    io:format("~p~n", [llama_tienda(lista_productos)]),
+    % Crea pedido
+    io:format("~p~n", [llama_tienda({crea_pedido, [{peras, 1}, {manzanas, 50}]})]),
     % Elimina suscripción de sebastian
     io:format("~p~n", [llama_tienda({eliminar_suscripcion, sebastian})]),
     % Lista los socios
@@ -241,21 +256,44 @@ llama_producto(Producto, Mensaje) ->
                 no
             end;
         Producto ->
-            Success = lists:keyfind(Producto, 1, llama_tienda(lista_productos_pid)),
-            io:format("Success: ~p~n", [Success]),
-            case Success of
-                false ->
-                    no;
-                {_, PID} ->
-                    monitor(process, PID),
-                    PID ! {self(), Mensaje},
-                    receive
-                        {servidor_producto, Respuesta} ->
-                            Respuesta;
-                        {'DOWN', _, process, PID, _} ->
-                            no
-                    after 5000 ->
-                        no
-                    end
+            io:format("Buscando ~p~n", [Producto]),
+            {_, PID} = lists:keyfind(Producto, 1, llama_tienda(lista_productos)),
+            monitor(process, PID),
+            PID ! {self(), Mensaje},
+            receive
+                {servidor_producto, Respuesta} ->
+                    Respuesta;
+                {'DOWN', _, process, PID, _} ->
+                    no
+            after 5000 ->
+                no
             end
     end.
+
+% llama_producto_desde_servidor(Producto, Mensaje, ListaProductos) ->
+%     case Producto of
+%         {_, PID} ->
+%             monitor(process, PID),
+%             PID ! {self(), Mensaje},
+%             receive
+%                 {servidor_producto, Respuesta} ->
+%                     Respuesta;
+%                 {'DOWN', _, process, PID, _} ->
+%                     no
+%             after 5000 ->
+%                 no
+%             end;
+%         Producto ->
+%             io:format("Buscando ~p~n", [Producto]),
+%             {_, PID} = lists:keyfind(Producto, 1, ListaProductos),
+%             monitor(process, PID),
+%             PID ! {self(), Mensaje},
+%             receive
+%                 {servidor_producto, Respuesta} ->
+%                     Respuesta;
+%                 {'DOWN', _, process, PID, _} ->
+%                     no
+%             after 5000 ->
+%                 no
+%             end
+%     end.
