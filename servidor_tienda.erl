@@ -115,6 +115,11 @@ servidor(Datos) ->
             ),
             De ! {servidor_tienda, Productos},
             servidor(Datos);
+        {De, {crea_pedido, _ListaDeProductos}} ->
+            % TODO: Verificar socio
+            io:format("Creando pedido ~p~n", [integer_to_list(element(3, Datos))]),
+            De ! {servidor_tienda, ok},
+            servidor({element(1, Datos), element(2, Datos), element(3, Datos) + 1});
         {'DOWN', _, process, PID, _} ->
             Producto = lists:keyfind(PID, 2, element(2, Datos)),
             io:format("Eliminando producto ~p~n", [Producto]),
