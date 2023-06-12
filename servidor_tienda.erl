@@ -107,7 +107,13 @@ servidor(Datos) ->
             end;
         {De, lista_productos} ->
             io:format("Listando productos~n"),
-            De ! {servidor_tienda, element(2, Datos)},
+            Productos = lists:map(
+                fun({Producto, PID}) ->
+                    {Producto, llama_producto({Producto, PID}, mostrar_disponibilidad)}
+                end,
+                element(2, Datos)
+            ),
+            De ! {servidor_tienda, Productos},
             servidor(Datos);
         {'DOWN', _, process, PID, _} ->
             Producto = lists:keyfind(PID, 2, element(2, Datos)),
